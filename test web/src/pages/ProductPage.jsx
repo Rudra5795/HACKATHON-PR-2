@@ -3,10 +3,13 @@ import { useParams, Link } from 'react-router-dom';
 import { Star, MapPin, ShoppingCart, CheckCircle, Clock } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
+import { farmerAvatars } from '../data/mockData';
 
 function getHoursAgo(iso) {
   return Math.max(1, Math.round((Date.now() - new Date(iso).getTime()) / 3600000));
 }
+
+const categoryEmoji = { Vegetables: '🥬', Fruits: '🍎', Dairy: '🥛', Grains: '🌾', Spices: '🌶️', Herbs: '🌿' };
 
 export default function ProductPage() {
   const { id } = useParams();
@@ -52,7 +55,7 @@ export default function ProductPage() {
       <div className="container">
         <div className="product-layout">
           <div className="product-image-box fade-in" id="product-image">
-            <span className="emoji">{product.emoji}</span>
+            <span className="emoji">{product.emoji || categoryEmoji[product.category] || '🛒'}</span>
             <span className="badge badge-fresh" style={{ position:'absolute', top:20, left:20 }}>
               <Clock size={12} /> {t('harvestedAgo').replace('{hours}', getHoursAgo(product.freshness))}
             </span>
@@ -81,7 +84,11 @@ export default function ProductPage() {
             </p>
 
             <div className="farmer-info-card" id="farmer-info">
-              <div className="avatar">👨‍🌾</div>
+              <div className="avatar">
+                {farmerAvatars[product.farmer_id]
+                  ? <img src={farmerAvatars[product.farmer_id]} alt={farmer?.name} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                  : '👨‍🌾'}
+              </div>
               <div className="details" style={{ flex:1 }}>
                 <h3>{lang==='en' ? farmer?.name : farmer?.name_hi} {farmer?.verified && <CheckCircle size={14} color="var(--green)" style={{ verticalAlign:'middle' }} />}</h3>
                 <p><MapPin size={12} style={{ verticalAlign:'middle' }} /> {lang==='en' ? farmer?.location : farmer?.location_hi}</p>

@@ -69,7 +69,7 @@ export default function CheckoutPage() {
             <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: 16 }}>{t('orderSummary')}</h2>
             {cart.map(item => (
               <div className="summary-item" key={item.id}>
-                <span className="item-emoji">{item.emoji}</span>
+                <span className="item-emoji">{item.emoji || '🛒'}</span>
                 <div className="item-info">
                   <h4>{lang === 'en' ? item.name : item.nameHi}</h4>
                   <p>₹{item.price} × {item.qty}</p>

@@ -9,6 +9,9 @@ function getHoursAgo(iso) {
   return Math.max(1, Math.round((Date.now() - new Date(iso).getTime()) / 3600000));
 }
 
+// Fallback emoji by category when product.emoji is null
+const categoryEmoji = { Vegetables: '🥬', Fruits: '🍎', Dairy: '🥛', Grains: '🌾', Spices: '🌶️', Herbs: '🌿' };
+
 const nearbyFarmsData = [
   { name: 'Green Valley Farm', dist: 2.5, products: 18, rating: 4.8, emoji: '🏡' },
   { name: 'Sunrise Organics',  dist: 4.1, products: 12, rating: 4.6, emoji: '🌅' },
@@ -75,7 +78,7 @@ export default function ConsumerDashboard() {
                 return (
                   <Link to={`/product/${p.id}`} key={p.id} className={`product-card fade-in-up stagger-${(i % 5) + 1}`} id={`shop-product-${p.id}`}>
                     <div className="product-card-image">
-                      <span className="emoji">{p.emoji}</span>
+                      <span className="emoji">{p.emoji || categoryEmoji[p.category] || '🛒'}</span>
                       <span className="badge badge-green">{lang === 'en' ? p.badge : p.badge_hi}</span>
                     </div>
                     <div className="product-card-body">

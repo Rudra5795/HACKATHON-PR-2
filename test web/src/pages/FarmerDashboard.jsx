@@ -204,7 +204,7 @@ export default function FarmerDashboard() {
           <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))', gap:16, marginBottom:32 }}>
             {myProducts.map(p => (
               <div key={p.id} className="glass-card" style={{ padding:18, display:'flex', alignItems:'center', gap:14 }}>
-                <div style={{ fontSize:'2rem' }}>{p.emoji}</div>
+                <div style={{ fontSize:'2rem' }}>{p.emoji || '🛒'}</div>
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontWeight:700, fontSize:'.95rem', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.name}</div>
                   <div style={{ fontSize:'.8rem', color:'var(--text-secondary)' }}>{p.category} • ₹{p.price}</div>

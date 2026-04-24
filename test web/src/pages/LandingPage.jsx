@@ -3,11 +3,13 @@ import { Link } from 'react-router-dom';
 import { Star, ArrowRight, CheckCircle } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { fetchProducts, fetchFarmers, fetchCategories } from '../lib/supabase';
-import { images } from '../data/mockData';
+import { images, farmerAvatars } from '../data/mockData';
 
 function getHoursAgo(iso) {
   return Math.max(1, Math.round((Date.now() - new Date(iso).getTime()) / 3600000));
 }
+
+const categoryEmoji = { Vegetables: '🥬', Fruits: '🍎', Dairy: '🥛', Grains: '🌾', Spices: '🌶️', Herbs: '🌿' };
 
 function SkeletonCard() {
   return (
@@ -25,7 +27,10 @@ function SkeletonCard() {
 }
 
 export default function LandingPage() {
-  const { t, lang, addToCart } = useApp();
+  const { t, lang, addToCart, session, profile } = useApp();
+  const userRole = profile?.role || 'consumer';
+  const isFarmer = session && userRole === 'farmer';
+  const isConsumer = session && userRole === 'consumer';
   const [products, setProducts]     = useState([]);
   const [farmers, setFarmers]       = useState([]);
   const [categories, setCategories] = useState([]);
@@ -53,8 +58,21 @@ export default function LandingPage() {
             <h1>{t('heroTagline')}<br /><span className="highlight">{t('heroHighlight')}</span></h1>
             <p>{t('heroSubtext')}</p>
             <div className="hero-buttons">
-              <Link to="/shop" className="btn btn-primary btn-lg" id="shop-now-btn">{t('shopNow')} <ArrowRight size={18} /></Link>
-              <Link to="/farmer" className="btn btn-secondary btn-lg" id="sell-btn">{t('sellProduce')}</Link>
+              {/* Not logged in → show both options */}
+              {!session && (
+                <>
+                  <Link to="/auth" className="btn btn-primary btn-lg" id="shop-now-btn">{t('shopNow')} <ArrowRight size={18} /></Link>
+                  <Link to="/auth" className="btn btn-secondary btn-lg" id="sell-btn">{t('sellProduce')}</Link>
+                </>
+              )}
+              {/* Consumer → shop only */}
+              {isConsumer && (
+                <Link to="/shop" className="btn btn-primary btn-lg" id="shop-now-btn">{t('shopNow')} <ArrowRight size={18} /></Link>
+              )}
+              {/* Farmer → farm dashboard only */}
+              {isFarmer && (
+                <Link to="/farmer" className="btn btn-primary btn-lg" id="farmer-dash-btn">{lang === 'en' ? 'Go to Farm Dashboard' : 'फ़ार्म डैशबोर्ड पर जाएं'} <ArrowRight size={18} /></Link>
+              )}
             </div>
             <div className="hero-stats">
               <div className="hero-stat"><div className="num">500+</div><div className="label">{lang === 'en' ? 'Farmers' : 'किसान'}</div></div>
@@ -83,7 +101,7 @@ export default function LandingPage() {
                   return (
                     <Link to={`/product/${p.id}`} key={p.id} className={`product-card fade-in-up stagger-${i + 1}`} id={`product-card-${p.id}`}>
                       <div className="product-card-image">
-                        <span className="emoji">{p.emoji}</span>
+                        <span className="emoji">{p.emoji || categoryEmoji[p.category] || '🛒'}</span>
                         <span className="badge badge-green">{lang === 'en' ? p.badge : p.badge_hi}</span>
                       </div>
                       <div className="product-card-body">
@@ -133,7 +151,13 @@ export default function LandingPage() {
           <div className="farmers-grid">
             {(loading ? [] : farmers).slice(0, 4).map((f, i) => (
               <div key={f.id} className={`farmer-card fade-in-up stagger-${i + 1}`} id={`farmer-${f.id}`}>
-                <div className="farmer-avatar">{f.image_url ? <img src={f.image_url} alt={f.name} /> : '👨‍🌾'}</div>
+                <div className="farmer-avatar">
+                  {farmerAvatars[f.id]
+                    ? <img src={farmerAvatars[f.id]} alt={f.name} />
+                    : f.image_url
+                      ? <img src={f.image_url} alt={f.name} />
+                      : '👨‍🌾'}
+                </div>
                 <h3>{lang === 'en' ? f.name : f.name_hi}</h3>
                 <div className="location"><span>📍</span>{lang === 'en' ? f.location : f.location_hi}</div>
                 <div className="rating"><Star size={14} fill="var(--yellow)" stroke="var(--yellow)" /> {f.rating} ({f.reviews})</div>

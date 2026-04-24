@@ -3,7 +3,24 @@ import productsImg from '../assets/products_collage.png';
 import farmerImg from '../assets/farmer_portrait.png';
 import deliveryImg from '../assets/delivery_illustration.png';
 
+import farmerRamesh from '../assets/farmer_ramesh.png';
+import farmerSunita from '../assets/farmer_sunita.png';
+import farmerArjun from '../assets/farmer_arjun.png';
+import farmerLakshmi from '../assets/farmer_lakshmi.png';
+import farmerKiran from '../assets/farmer_kiran.png';
+import farmerMeena from '../assets/farmer_meena.png';
+
 export const images = { heroImg, productsImg, farmerImg, deliveryImg };
+
+// Map farmer IDs (from Supabase seed order) to their portrait images
+export const farmerAvatars = {
+  1: farmerRamesh,   // Ramesh Patel
+  2: farmerSunita,   // Sunita Devi
+  3: farmerArjun,    // Arjun Singh
+  4: farmerLakshmi,  // Lakshmi Bai
+  5: farmerKiran,    // Kiran Kumar
+  6: farmerMeena,    // Meena Kumari
+};
 
 export const categories = [
   { id: 1, name: 'Fruits', nameHi: 'फल', icon: '🍎', color: '#FEE2E2', accent: '#EF4444', count: 48 },
