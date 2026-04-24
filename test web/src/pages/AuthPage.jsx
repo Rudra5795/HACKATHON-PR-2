@@ -70,7 +70,7 @@ export default function AuthPage() {
                 style={{
                   flex: 1, padding: '10px 0', border: 'none', borderRadius: 'calc(var(--radius-sm) - 2px)',
                   fontWeight: 600, fontSize: '.9rem', cursor: 'pointer', transition: 'all .2s',
-                  background: mode === m ? '#fff' : 'transparent',
+                  background: mode === m ? 'var(--surface-solid)' : 'transparent',
                   color: mode === m ? 'var(--green)' : 'var(--text-secondary)',
                   boxShadow: mode === m ? '0 1px 4px rgba(0,0,0,.08)' : 'none',
                 }}>
@@ -88,8 +88,8 @@ export default function AuthPage() {
               <button key={r.val} onClick={() => setRole(r.val)} id={`role-${r.val}`}
                 style={{
                   padding: '16px 12px', border: '2px solid', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
-                  borderColor: role === r.val ? 'var(--green)' : '#E5E7EB',
-                  background: role === r.val ? 'var(--green-light)' : '#fff',
+                  borderColor: role === r.val ? 'var(--green)' : 'var(--border-color)',
+                  background: role === r.val ? 'var(--green-light)' : 'var(--surface-solid)',
                   textAlign: 'center', transition: 'all .2s',
                 }}>
                 <div style={{ color: role === r.val ? 'var(--green)' : 'var(--text-secondary)', marginBottom: 6 }}>{r.icon}</div>

@@ -9,6 +9,20 @@ export function AppProvider({ children }) {
   const [cart, setCart]                     = useState([]);
   const [selectedAddress, setSelectedAddress] = useState(1);
   const [paymentMethod, setPaymentMethod]   = useState('upi');
+  const [theme, setTheme]                   = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('fd-theme') || 'light';
+    }
+    return 'light';
+  });
+
+  // Apply theme to document
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('fd-theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => setTheme(t => t === 'light' ? 'dark' : 'light');
 
   // Auth state
   const [session, setSession]       = useState(null);
@@ -128,6 +142,7 @@ export function AppProvider({ children }) {
   return (
     <AppContext.Provider value={{
       lang, t, toggleLang,
+      theme, toggleTheme,
       cart, addToCart, removeFromCart, updateQty, cartTotal, cartCount,
       selectedAddress, setSelectedAddress, paymentMethod, setPaymentMethod,
       // auth

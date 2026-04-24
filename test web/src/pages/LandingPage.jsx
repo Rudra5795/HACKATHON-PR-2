@@ -123,7 +123,7 @@ export default function LandingPage() {
       </section>
 
       {/* Categories */}
-      <section className="section" style={{ background: '#fff' }} id="categories-section">
+      <section className="section" style={{ background: 'var(--surface-solid)' }} id="categories-section">
         <div className="container">
           <div className="section-header fade-in-up">
             <h2>{t('shopByCategory')}</h2>
