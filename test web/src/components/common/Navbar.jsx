@@ -4,12 +4,12 @@ import {
   Search, MapPin, ShoppingCart, Globe, LogIn, LogOut, User,
   Sprout, MoreVertical, Home, ShoppingBag, Package, CreditCard,
   Settings, HelpCircle, ChevronRight, X, LayoutDashboard,
-  BarChart3, PlusCircle, Truck, Sun, Moon, Menu
+  BarChart3, PlusCircle, Truck, Sun, Moon, Menu, MessageCircle
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
 export default function Navbar() {
-  const { t, toggleLang, cartCount, session, profile, signOut, lang, theme, toggleTheme } = useApp();
+  const { t, toggleLang, cartCount, session, profile, signOut, lang, theme, toggleTheme, searchQuery, setSearchQuery, userLocation, detectLocation } = useApp();
   const navigate = useNavigate();
 
   const [profileOpen, setProfileOpen] = useState(false);
@@ -110,6 +110,7 @@ export default function Navbar() {
     }
 
     links.push(
+      { to: '/chat', icon: <MessageCircle size={16} />, label: lang === 'en' ? 'Messages' : 'संदेश', id: 'dropdown-chat-link' },
       { to: '/profile', icon: <Settings size={16} />, label: lang === 'en' ? 'Settings' : 'सेटिंग्स', id: 'dropdown-settings-link' },
     );
 
@@ -128,7 +129,12 @@ export default function Navbar() {
           {(!session || isConsumer) && (
             <div className="search-bar">
               <Search size={18} />
-              <input type="text" placeholder={t('searchPlaceholder')} id="search-input" />
+              <input type="text" placeholder={t('searchPlaceholder')} id="search-input"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && searchQuery.trim()) navigate('/shop'); }}
+              />
+              {searchQuery && <button onClick={() => setSearchQuery('')} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-secondary)',padding:0,display:'flex'}}><X size={16} /></button>}
             </div>
           )}
 
@@ -136,14 +142,25 @@ export default function Navbar() {
           {session && isFarmer && (
             <div className="search-bar">
               <Search size={18} />
-              <input type="text" placeholder={lang === 'en' ? 'Search your products...' : 'अपने उत्पाद खोजें...'} id="search-input" />
+              <input type="text" placeholder={lang === 'en' ? 'Search your products...' : 'अपने उत्पाद खोजें...'} id="search-input"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && searchQuery.trim()) navigate('/farmer'); }}
+              />
+              {searchQuery && <button onClick={() => setSearchQuery('')} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-secondary)',padding:0,display:'flex'}}><X size={16} /></button>}
             </div>
           )}
 
           <div className="nav-actions">
             {/* Location — only for consumers */}
             {(!session || isConsumer) && (
-              <button className="location-btn" id="location-btn"><MapPin size={14} />{t('location')}</button>
+              <button className="location-btn" id="location-btn" onClick={detectLocation} title={userLocation.full || userLocation.label}>
+                {userLocation.loading ? (
+                  <><span className="spinner" style={{width:14,height:14,borderWidth:2,marginRight:4}} /> {lang === 'en' ? 'Detecting...' : 'खोज रहा…'}</>
+                ) : (
+                  <><MapPin size={14} />{userLocation.label}</>
+                )}
+              </button>
             )}
 
             {/* Theme Toggle */}
@@ -167,6 +184,11 @@ export default function Navbar() {
                     {lang === 'en' ? 'Shop' : 'दुकान'}
                   </Link>
                 )}
+
+                {/* Chat link */}
+                <Link to="/chat" className="nav-chat-link" id="nav-chat-link">
+                  <MessageCircle size={16} />
+                </Link>
 
                 {/* Profile Avatar Button */}
                 <div className="profile-dropdown-wrapper" ref={profileRef}>
@@ -251,8 +273,8 @@ export default function Navbar() {
                     <span>
                       {session
                         ? (isFarmer
-                            ? (lang === 'en' ? '🌾 Farmer Menu' : '🌾 किसान मेनू')
-                            : (lang === 'en' ? '🛒 Consumer Menu' : '🛒 ग्राहक मेनू'))
+                          ? (lang === 'en' ? '🌾 Farmer Menu' : '🌾 किसान मेनू')
+                          : (lang === 'en' ? '🛒 Consumer Menu' : '🛒 ग्राहक मेनू'))
                         : (lang === 'en' ? 'Quick Menu' : 'क्विक मेनू')
                       }
                     </span>

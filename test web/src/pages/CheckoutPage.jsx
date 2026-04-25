@@ -1,13 +1,45 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MapPin, CreditCard, Truck, Plus, Minus } from 'lucide-react';
+import { MapPin, CreditCard, Truck, Plus, Minus, X, Trash2 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { addresses } from '../data/mockData';
 
 export default function CheckoutPage() {
-  const { t, lang, cart, cartTotal, updateQty, removeFromCart, selectedAddress, setSelectedAddress, paymentMethod, setPaymentMethod } = useApp();
+  const {
+    t, lang, cart, cartTotal, updateQty, removeFromCart,
+    selectedAddress, setSelectedAddress, paymentMethod, setPaymentMethod,
+    addresses, addAddress, removeAddress,
+  } = useApp();
+
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newAddr, setNewAddr] = useState({ type: '', typeHi: '', address: '', city: '' });
+
   const deliveryFee = cartTotal >= 200 ? 0 : 30;
   const discount = Math.round(cartTotal * 0.05);
   const total = cartTotal + deliveryFee - discount;
+
+  const handleAddAddress = (e) => {
+    e.preventDefault();
+    if (!newAddr.type.trim() || !newAddr.address.trim() || !newAddr.city.trim()) return;
+    const id = addAddress({
+      type: newAddr.type,
+      typeHi: newAddr.typeHi || newAddr.type,
+      address: newAddr.address,
+      city: newAddr.city,
+      isDefault: false,
+    });
+    setSelectedAddress(id);
+    setNewAddr({ type: '', typeHi: '', address: '', city: '' });
+    setShowAddForm(false);
+  };
+
+  const handleRemoveAddress = (e, id) => {
+    e.stopPropagation();
+    if (addresses.length <= 1) {
+      alert(lang === 'en' ? 'You must have at least one address' : 'आपके पास कम से कम एक पता होना चाहिए');
+      return;
+    }
+    removeAddress(id);
+  };
 
   if (cart.length === 0) {
     return (
@@ -28,24 +60,97 @@ export default function CheckoutPage() {
         <h1 style={{ fontSize: '1.6rem', fontWeight: 700, marginBottom: 28 }}>{t('checkout')}</h1>
         <div className="checkout-layout">
           <div>
+            {/* ── Delivery Address ── */}
             <div className="checkout-section fade-in-up">
               <h2><MapPin size={20} /> {t('deliveryAddress')}</h2>
               {addresses.map(a => (
                 <div key={a.id} className={`address-card ${selectedAddress === a.id ? 'selected' : ''}`}
                   onClick={() => setSelectedAddress(a.id)} id={`address-${a.id}`}>
                   <div className="radio"></div>
-                  <div>
-                    <h3>{lang === 'en' ? a.type : a.typeHi} {a.isDefault && <span className="badge badge-green" style={{ marginLeft: 8 }}>Default</span>}</h3>
+                  <div style={{ flex: 1 }}>
+                    <h3>
+                      {lang === 'en' ? a.type : a.typeHi}{' '}
+                      {a.isDefault && <span className="badge badge-green" style={{ marginLeft: 8 }}>Default</span>}
+                    </h3>
                     <p>{a.address}</p>
                     <p>{a.city}</p>
                   </div>
+                  {addresses.length > 1 && (
+                    <button
+                      className="btn-icon"
+                      style={{ width: 32, height: 32, color: '#DC2626', background: '#FEF2F2', borderRadius: 8, flexShrink: 0 }}
+                      onClick={(e) => handleRemoveAddress(e, a.id)}
+                      title={lang === 'en' ? 'Remove address' : 'पता हटाएं'}
+                      id={`remove-addr-${a.id}`}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
                 </div>
               ))}
-              <button className="btn btn-ghost" style={{ width: '100%', justifyContent: 'center', border: '2px dashed #D1D5DB', borderRadius: 'var(--radius-sm)', padding: 16 }}>
-                + {t('addNewAddress')}
-              </button>
+
+              {/* Add Address Form */}
+              {showAddForm ? (
+                <form onSubmit={handleAddAddress} className="address-form" id="add-address-form">
+                  <div className="address-form-header">
+                    <h3>{lang === 'en' ? 'Add New Address' : 'नया पता जोड़ें'}</h3>
+                    <button type="button" className="btn-icon" style={{ width: 28, height: 28 }}
+                      onClick={() => setShowAddForm(false)}><X size={14} /></button>
+                  </div>
+                  <div className="address-form-fields">
+                    <div className="form-group">
+                      <label>{lang === 'en' ? 'Label' : 'लेबल'}</label>
+                      <input
+                        type="text"
+                        placeholder={lang === 'en' ? 'e.g. Home, Office, Mom\'s House' : 'जैसे: घर, ऑफिस, माँ का घर'}
+                        value={newAddr.type}
+                        onChange={e => setNewAddr(p => ({ ...p, type: e.target.value }))}
+                        required
+                        id="addr-label-input"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>{lang === 'en' ? 'Street Address' : 'सड़क का पता'}</label>
+                      <input
+                        type="text"
+                        placeholder={lang === 'en' ? 'House/Flat No., Street, Area' : 'मकान/फ्लैट नं., सड़क, क्षेत्र'}
+                        value={newAddr.address}
+                        onChange={e => setNewAddr(p => ({ ...p, address: e.target.value }))}
+                        required
+                        id="addr-street-input"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>{lang === 'en' ? 'City, State - Pincode' : 'शहर, राज्य - पिनकोड'}</label>
+                      <input
+                        type="text"
+                        placeholder={lang === 'en' ? 'e.g. Gurugram, Haryana - 122001' : 'जैसे: गुरुग्राम, हरियाणा - 122001'}
+                        value={newAddr.city}
+                        onChange={e => setNewAddr(p => ({ ...p, city: e.target.value }))}
+                        required
+                        id="addr-city-input"
+                      />
+                    </div>
+                  </div>
+                  <div className="address-form-actions">
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowAddForm(false)}>
+                      {lang === 'en' ? 'Cancel' : 'रद्द करें'}
+                    </button>
+                    <button type="submit" className="btn btn-primary btn-sm" id="save-address-btn">
+                      {lang === 'en' ? 'Save Address' : 'पता सहेजें'}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <button className="btn btn-ghost" id="add-address-btn"
+                  style={{ width: '100%', justifyContent: 'center', border: '2px dashed var(--border-color)', borderRadius: 'var(--radius-sm)', padding: 16 }}
+                  onClick={() => setShowAddForm(true)}>
+                  + {t('addNewAddress')}
+                </button>
+              )}
             </div>
 
+            {/* ── Payment Method ── */}
             <div className="checkout-section fade-in-up stagger-2">
               <h2><CreditCard size={20} /> {t('paymentMethod')}</h2>
               <div className="payment-options">
@@ -65,6 +170,7 @@ export default function CheckoutPage() {
             </div>
           </div>
 
+          {/* ── Order Summary ── */}
           <div className="order-summary-card fade-in-up stagger-3" id="order-summary">
             <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: 16 }}>{t('orderSummary')}</h2>
             {cart.map(item => (

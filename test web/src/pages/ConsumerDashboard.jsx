@@ -19,7 +19,7 @@ const nearbyFarmsData = [
 ];
 
 export default function ConsumerDashboard() {
-  const { t, lang, addToCart } = useApp();
+  const { t, lang, addToCart, searchQuery } = useApp();
   const [activeFilter, setActiveFilter] = useState('all');
   const [products, setProducts]         = useState([]);
   const [filters, setFilters]           = useState([]);
@@ -36,6 +36,15 @@ export default function ConsumerDashboard() {
   }, []);
 
   const filtered = products.filter(p => {
+    // Search filter
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const matchesName = (p.name || '').toLowerCase().includes(q) || (p.name_hi || '').toLowerCase().includes(q);
+      const matchesCategory = (p.category || '').toLowerCase().includes(q);
+      const matchesFarmer = (p.farmers?.name || '').toLowerCase().includes(q) || (p.farmers?.name_hi || '').toLowerCase().includes(q);
+      if (!matchesName && !matchesCategory && !matchesFarmer) return false;
+    }
+    // Quick filter
     if (activeFilter === 'all') return true;
     if (activeFilter === 'organic') return p.badge?.toLowerCase() === 'organic';
     if (activeFilter === 'under50') return p.price < 50;
@@ -89,7 +98,7 @@ export default function ConsumerDashboard() {
                         <span className="price">₹{p.price}<small style={{ fontSize: '.75rem', fontWeight: 400, color: 'var(--text-secondary)' }}> {t('perUnit').replace('{unit}', p.unit)}</small></span>
                         <span className="market-price">₹{p.market_price}</span>
                       </div>
-                      <button className="add-cart-btn" onClick={e => { e.preventDefault(); addToCart({ ...p, marketPrice: p.market_price, nameHi: p.name_hi }); }}>{t('addToCart')}</button>
+                      <button className="add-cart-btn" onClick={e => { e.preventDefault(); e.stopPropagation(); addToCart({ ...p, marketPrice: p.market_price, nameHi: p.name_hi }); }}>{t('addToCart')}</button>
                     </div>
                   </Link>
                 );

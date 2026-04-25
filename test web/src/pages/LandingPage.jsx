@@ -27,14 +27,14 @@ function SkeletonCard() {
 }
 
 export default function LandingPage() {
-  const { t, lang, addToCart, session, profile } = useApp();
+  const { t, lang, addToCart, session, profile, searchQuery } = useApp();
   const userRole = profile?.role || 'consumer';
   const isFarmer = session && userRole === 'farmer';
   const isConsumer = session && userRole === 'consumer';
-  const [products, setProducts]     = useState([]);
-  const [farmers, setFarmers]       = useState([]);
+  const [products, setProducts] = useState([]);
+  const [farmers, setFarmers] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [loading, setLoading]       = useState(true);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([fetchProducts(), fetchFarmers(), fetchCategories()])
@@ -47,7 +47,11 @@ export default function LandingPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const featured = products.slice(0, 4);
+  const featured = products.filter(p => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    return (p.name || '').toLowerCase().includes(q) || (p.name_hi || '').toLowerCase().includes(q) || (p.category || '').toLowerCase().includes(q);
+  }).slice(0, 4);
 
   return (
     <main>
@@ -97,26 +101,26 @@ export default function LandingPage() {
             {loading
               ? Array(4).fill(0).map((_, i) => <SkeletonCard key={i} />)
               : featured.map((p, i) => {
-                  const farmer = p.farmers;
-                  return (
-                    <Link to={`/product/${p.id}`} key={p.id} className={`product-card fade-in-up stagger-${i + 1}`} id={`product-card-${p.id}`}>
-                      <div className="product-card-image">
-                        <span className="emoji">{p.emoji || categoryEmoji[p.category] || '🛒'}</span>
-                        <span className="badge badge-green">{lang === 'en' ? p.badge : p.badge_hi}</span>
+                const farmer = p.farmers;
+                return (
+                  <Link to={`/product/${p.id}`} key={p.id} className={`product-card fade-in-up stagger-${i + 1}`} id={`product-card-${p.id}`}>
+                    <div className="product-card-image">
+                      <span className="emoji">{p.emoji || categoryEmoji[p.category] || '🛒'}</span>
+                      <span className="badge badge-green">{lang === 'en' ? p.badge : p.badge_hi}</span>
+                    </div>
+                    <div className="product-card-body">
+                      <h3>{lang === 'en' ? p.name : p.name_hi}</h3>
+                      <div className="farmer-name"><CheckCircle size={12} color="var(--green)" />{lang === 'en' ? farmer?.name : farmer?.name_hi}</div>
+                      <div className="freshness-tag">{t('harvestedAgo').replace('{hours}', getHoursAgo(p.freshness))}</div>
+                      <div className="price-row">
+                        <span className="price">₹{p.price}<small style={{ fontSize: '.75rem', fontWeight: 400, color: 'var(--text-secondary)' }}> {t('perUnit').replace('{unit}', p.unit)}</small></span>
+                        <span className="market-price">₹{p.market_price}</span>
                       </div>
-                      <div className="product-card-body">
-                        <h3>{lang === 'en' ? p.name : p.name_hi}</h3>
-                        <div className="farmer-name"><CheckCircle size={12} color="var(--green)" />{lang === 'en' ? farmer?.name : farmer?.name_hi}</div>
-                        <div className="freshness-tag">{t('harvestedAgo').replace('{hours}', getHoursAgo(p.freshness))}</div>
-                        <div className="price-row">
-                          <span className="price">₹{p.price}<small style={{fontSize:'.75rem',fontWeight:400,color:'var(--text-secondary)'}}> {t('perUnit').replace('{unit}', p.unit)}</small></span>
-                          <span className="market-price">₹{p.market_price}</span>
-                        </div>
-                        <button className="add-cart-btn" onClick={e => { e.preventDefault(); addToCart({ ...p, marketPrice: p.market_price, nameHi: p.name_hi }); }} id={`add-cart-${p.id}`}>{t('addToCart')}</button>
-                      </div>
-                    </Link>
-                  );
-                })
+                      <button className="add-cart-btn" onClick={e => { e.preventDefault(); e.stopPropagation(); addToCart({ ...p, marketPrice: p.market_price, nameHi: p.name_hi }); }} id={`add-cart-${p.id}`}>{t('addToCart')}</button>
+                    </div>
+                  </Link>
+                );
+              })
             }
           </div>
         </div>

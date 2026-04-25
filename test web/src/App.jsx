@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AppProvider, useApp } from './context/AppContext';
 import Navbar from './components/common/Navbar';
 import Footer from './components/common/Footer';
@@ -10,6 +10,7 @@ import CheckoutPage from './pages/CheckoutPage';
 import OrderTrackingPage from './pages/OrderTrackingPage';
 import ProfileDashboard from './pages/ProfileDashboard';
 import AuthPage from './pages/AuthPage';
+import ChatPage from './pages/ChatPage';
 import './App.css';
 
 // ── Role-based route guard ─────────────────────────────────────────────────────
@@ -51,6 +52,8 @@ function AppShell() {
   }
 
   const userRole = profile?.role || 'consumer';
+  const location = useLocation();
+  const hideFooter = location.pathname === '/chat';
 
   return (
     <>
@@ -71,6 +74,7 @@ function AppShell() {
 
         {/* Shared — any logged-in user */}
         <Route path="/profile" element={<RoleRoute allowedRole={null}><ProfileDashboard /></RoleRoute>} />
+        <Route path="/chat"    element={<RoleRoute allowedRole={null}><ChatPage /></RoleRoute>} />
 
         {/* Catch-all: redirect to appropriate home */}
         <Route path="*" element={
@@ -79,7 +83,7 @@ function AppShell() {
             : <Navigate to="/" replace />
         } />
       </Routes>
-      <Footer />
+      {!hideFooter && <Footer />}
     </>
   );
 }
