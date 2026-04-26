@@ -11,6 +11,7 @@ import OrderTrackingPage from './pages/OrderTrackingPage';
 import ProfileDashboard from './pages/ProfileDashboard';
 import AuthPage from './pages/AuthPage';
 import ChatPage from './pages/ChatPage';
+import AIChatWidget from './components/AIChatWidget/AIChatWidget';
 import './App.css';
 
 // ── Role-based route guard ─────────────────────────────────────────────────────
@@ -84,6 +85,7 @@ function AppShell() {
         } />
       </Routes>
       {!hideFooter && <Footer />}
+      <AIChatWidget />
     </>
   );
 }
