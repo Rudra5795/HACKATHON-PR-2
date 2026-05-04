@@ -9,6 +9,12 @@ const DEFAULT_ADDRESSES = [
   { id: 2, type: 'Office', typeHi: 'ऑफिस', address: 'Tower B, Floor 4, Cyber City', city: 'Gurugram, Haryana - 122002', isDefault: false },
 ];
 
+// ── Phone → synthetic email mapping (no SMS provider needed) ──────
+const phoneToEmail = (phone) => {
+  const digits = phone.replace(/\D/g, '');
+  return `phone_${digits}@farmdirect.app`;
+};
+
 export function AppProvider({ children }) {
   const [lang, setLang]                     = useState('en');
   const [cart, setCart]                     = useState([]);
@@ -38,9 +44,7 @@ export function AppProvider({ children }) {
   const removeAddress = (id) => {
     setAddresses(prev => {
       const next = prev.filter(a => a.id !== id);
-      // If we removed the selected address, select the first one
       if (selectedAddress === id && next.length > 0) setSelectedAddress(next[0].id);
-      // If we removed the default, make the first one default
       if (next.length > 0 && !next.some(a => a.isDefault)) {
         next[0].isDefault = true;
       }
@@ -74,7 +78,6 @@ export function AppProvider({ children }) {
       async (position) => {
         const { latitude, longitude } = position.coords;
         try {
-          // Reverse geocode using free Nominatim API
           const res = await fetch(
             `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=14&addressdetails=1`,
             { headers: { 'Accept-Language': lang === 'en' ? 'en' : 'hi' } }
@@ -97,14 +100,14 @@ export function AppProvider({ children }) {
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
     );
   };
-  const [theme, setTheme]                   = useState(() => {
+
+  const [theme, setTheme] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('fd-theme') || 'light';
     }
     return 'light';
   });
 
-  // Apply theme to document
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('fd-theme', theme);
@@ -114,8 +117,8 @@ export function AppProvider({ children }) {
 
   // Auth state
   const [session, setSession]       = useState(null);
-  const [profile, setProfile]       = useState(null);   // profiles row
-  const [farmerProfile, setFarmerProfile] = useState(null); // farmers row
+  const [profile, setProfile]       = useState(null);
+  const [farmerProfile, setFarmerProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
 
   const t = useCallback((key) => translations[lang]?.[key] || key, [lang]);
@@ -140,7 +143,6 @@ export function AppProvider({ children }) {
 
   const loadUserData = async (userId) => {
     try {
-      // Load profile
       const { data: prof } = await supabase
         .from('profiles')
         .select('*')
@@ -148,7 +150,6 @@ export function AppProvider({ children }) {
         .single();
       setProfile(prof);
 
-      // If farmer, load farmer row
       if (prof?.role === 'farmer') {
         const { data: farmer } = await supabase
           .from('farmers')
@@ -165,6 +166,8 @@ export function AppProvider({ children }) {
   };
 
   // ── Auth helpers ───────────────────────────────────────────────────────────
+
+  /** Standard email signup — used for consumers */
   const signUp = async (email, password, role, fullName) => {
     const { data, error } = await supabase.auth.signUp({
       email, password,
@@ -174,10 +177,7 @@ export function AppProvider({ children }) {
 
     const userId = data.user?.id;
     if (userId) {
-      // Upsert profile row
       await supabase.from('profiles').upsert({ id: userId, full_name: fullName, role });
-
-      // If farmer, create farmer row
       if (role === 'farmer') {
         const { data: farmer } = await supabase
           .from('farmers')
@@ -186,11 +186,53 @@ export function AppProvider({ children }) {
         setFarmerProfile(farmer);
       }
     }
-
-    return data; // contains { user, session } — session is non-null when email confirm is OFF
+    return data;
   };
 
+  /** Standard email login — used for consumers */
   const signIn = async (email, password) => {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    return data;
+  };
+
+  /**
+   * Phone signup for farmers.
+   * Maps phone → synthetic email, creates Supabase account with a fixed password
+   * derived from the phone number (since OTP is mocked).
+   */
+  const signUpWithPhone = async (phone, fullName) => {
+    const email    = phoneToEmail(phone);
+    const password = `fd_${phone.replace(/\D/g, '')}_farmer`;
+
+    const { data, error } = await supabase.auth.signUp({
+      email, password,
+      options: { data: { full_name: fullName, role: 'farmer', phone } },
+    });
+    if (error) throw error;
+
+    const userId = data.user?.id;
+    if (userId) {
+      await supabase.from('profiles').upsert({
+        id: userId, full_name: fullName, role: 'farmer', phone,
+      });
+      const { data: farmer } = await supabase
+        .from('farmers')
+        .insert({ user_id: userId, name: fullName, verified: false })
+        .select().single();
+      setFarmerProfile(farmer);
+    }
+    return data;
+  };
+
+  /**
+   * Phone login for farmers.
+   * Looks up the synthetic email for this phone and signs in.
+   */
+  const signInWithPhone = async (phone) => {
+    const email    = phoneToEmail(phone);
+    const password = `fd_${phone.replace(/\D/g, '')}_farmer`;
+
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
     return data;
@@ -224,6 +266,8 @@ export function AppProvider({ children }) {
     setCart(prev => prev.map(i => i.id === productId ? { ...i, qty } : i));
   };
 
+  const clearCart = () => setCart([]);
+
   const cartTotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
   const cartCount = cart.reduce((s, i) => s + i.qty, 0);
 
@@ -231,14 +275,14 @@ export function AppProvider({ children }) {
     <AppContext.Provider value={{
       lang, t, toggleLang,
       theme, toggleTheme,
-      cart, addToCart, removeFromCart, updateQty, cartTotal, cartCount,
+      cart, addToCart, removeFromCart, updateQty, clearCart, cartTotal, cartCount,
       searchQuery, setSearchQuery,
       selectedAddress, setSelectedAddress, paymentMethod, setPaymentMethod,
       addresses, addAddress, removeAddress, updateAddress,
       userLocation, detectLocation,
       // auth
       session, profile, farmerProfile, setFarmerProfile, authLoading,
-      signUp, signIn, signOut, loadUserData,
+      signUp, signIn, signUpWithPhone, signInWithPhone, signOut, loadUserData,
     }}>
       {children}
     </AppContext.Provider>

@@ -11,6 +11,7 @@ import OrderTrackingPage from './pages/OrderTrackingPage';
 import ProfileDashboard from './pages/ProfileDashboard';
 import AuthPage from './pages/AuthPage';
 import ChatPage from './pages/ChatPage';
+import AboutPage from './pages/AboutPage';
 import AIChatWidget from './components/AIChatWidget/AIChatWidget';
 import './App.css';
 
@@ -63,6 +64,7 @@ function AppShell() {
         {/* Public pages */}
         <Route path="/"     element={<LandingPage />} />
         <Route path="/auth" element={<AuthPage />} />
+        <Route path="/about" element={<AboutPage />} />
 
         {/* Consumer-only pages */}
         <Route path="/shop"       element={<RoleRoute allowedRole="consumer"><ConsumerDashboard /></RoleRoute>} />

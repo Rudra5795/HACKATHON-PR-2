@@ -1,161 +1,271 @@
-import { useState, useRef, useEffect } from 'react';
-import { Search, Send, ArrowLeft, CheckCircle, Phone, Video, MoreVertical, Smile, User, MessageCircle } from 'lucide-react';
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { Search, Send, ArrowLeft, CheckCircle, Phone, Video, MessageCircle, Smile } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { farmers } from '../data/mockData';
-import { farmerAvatars } from '../data/mockData';
-
-// ── Local storage persistence ──
-const CHATS_KEY = 'fd-chat-messages';
-const loadAllChats = () => { try { return JSON.parse(localStorage.getItem(CHATS_KEY)) || {}; } catch { return {}; } };
-const saveAllChats = (c) => localStorage.setItem(CHATS_KEY, JSON.stringify(c));
+import { supabase, fetchFarmers } from '../lib/supabase';
 
 export default function ChatPage() {
-  const { lang, session, profile, cart } = useApp();
+  const { lang, session, profile } = useApp();
   const isFarmer = profile?.role === 'farmer';
 
   const [selectedContact, setSelectedContact] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [message, setMessage] = useState('');
-  const [allChats, setAllChats] = useState(loadAllChats);
+  const [messages, setMessages] = useState([]);
+  const [contacts, setContacts] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [typing, setTyping] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
-  // Scroll to bottom on new messages
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [allChats, selectedContact]);
+  const myId = session?.user?.id;
 
-  // Focus input when contact selected
+  // 1. Fetch initial contacts and messages
   useEffect(() => {
-    if (selectedContact) inputRef.current?.focus();
+    if (!myId) return;
+
+    const loadChats = async () => {
+      // Fetch all messages involving the current user
+      const { data: msgs, error: msgsErr } = await supabase
+        .from('messages')
+        .select(`
+          *,
+          sender:profiles!sender_id(id, full_name, role, avatar_url),
+          receiver:profiles!receiver_id(id, full_name, role, avatar_url)
+        `)
+        .or(`sender_id.eq.${myId},receiver_id.eq.${myId}`)
+        .order('created_at', { ascending: true });
+
+      if (msgsErr) console.error('Error fetching messages:', msgsErr);
+      setMessages(msgs || []);
+
+      // Build contact list from messages
+      const contactMap = new Map();
+      
+      (msgs || []).forEach(m => {
+        const otherPerson = m.sender_id === myId ? m.receiver : m.sender;
+        if (!otherPerson) return;
+        
+        if (!contactMap.has(otherPerson.id)) {
+          contactMap.set(otherPerson.id, {
+            id: otherPerson.id,
+            name: otherPerson.full_name || 'User',
+            role: otherPerson.role,
+            avatar: otherPerson.avatar_url,
+            emoji: otherPerson.role === 'farmer' ? '👨‍🌾' : '👤',
+            lastMessage: m,
+            unreadCount: 0
+          });
+        } else {
+          const contact = contactMap.get(otherPerson.id);
+          if (new Date(m.created_at) > new Date(contact.lastMessage.created_at)) {
+            contact.lastMessage = m;
+          }
+        }
+        
+        if (m.receiver_id === myId && !m.read) {
+          contactMap.get(otherPerson.id).unreadCount++;
+        }
+      });
+
+      // If user is a consumer, also fetch all real farmers so they can initiate chat
+      if (!isFarmer) {
+        const allFarmers = await fetchFarmers().catch(() => []);
+        
+        for (const f of allFarmers) {
+          if (f.user_id && !contactMap.has(f.user_id)) {
+            contactMap.set(f.user_id, {
+              id: f.user_id,
+              name: f.name || f.name_hi,
+              role: 'farmer',
+              avatar: f.image_url,
+              emoji: '👨‍🌾',
+              location: f.location || f.location_hi,
+              specialty: f.specialty,
+              verified: f.verified,
+              lastMessage: null,
+              unreadCount: 0
+            });
+          }
+        }
+      }
+
+      setContacts(Array.from(contactMap.values()));
+      setLoading(false);
+    };
+
+    loadChats();
+
+    // 2. Subscribe to realtime messages
+    const channel = supabase.channel('realtime_messages')
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'messages'
+      }, (payload) => {
+        console.log('Realtime payload received:', payload);
+        if (payload.new.receiver_id !== myId && payload.new.sender_id !== myId) return;
+
+        // Fetch the sender profile for the new message
+        supabase.from('profiles').select('*').eq('id', payload.new.sender_id).single()
+          .then(({ data: senderProfile, error: profErr }) => {
+            if (profErr) console.error('Error fetching sender profile:', profErr);
+            
+            const newMsg = { ...payload.new, sender: senderProfile || { id: payload.new.sender_id, full_name: 'Unknown' } };
+            setMessages(prev => {
+              // Avoid duplicates if we sent it and optimistic update already added it
+              if (prev.find(m => m.id === newMsg.id)) return prev;
+              return [...prev, newMsg];
+            });
+            
+            // Update contact list
+            setContacts(prev => {
+              const newContacts = [...prev];
+              const cIdx = newContacts.findIndex(c => c.id === payload.new.sender_id || c.id === payload.new.receiver_id);
+              const otherId = payload.new.sender_id === myId ? payload.new.receiver_id : payload.new.sender_id;
+              
+              if (cIdx >= 0) {
+                newContacts[cIdx].lastMessage = newMsg;
+                if (payload.new.receiver_id === myId && selectedContact !== payload.new.sender_id) {
+                  newContacts[cIdx].unreadCount++;
+                } else if (payload.new.receiver_id === myId) {
+                  // If we are actively chatting, mark as read immediately
+                  markAsRead(payload.new.sender_id);
+                }
+              } else if (senderProfile && payload.new.receiver_id === myId) {
+                newContacts.push({
+                  id: senderProfile.id,
+                  name: senderProfile.full_name || 'User',
+                  role: senderProfile.role,
+                  avatar: senderProfile.avatar_url,
+                  emoji: senderProfile.role === 'farmer' ? '👨‍🌾' : '👤',
+                  lastMessage: newMsg,
+                  unreadCount: selectedContact !== senderProfile.id ? 1 : 0
+                });
+              }
+              return newContacts;
+            });
+          });
+      })
+      .subscribe((status, err) => {
+        console.log('Realtime subscription status:', status);
+        if (err) console.error('Realtime subscription error:', err);
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [myId, isFarmer]);
+
+  // Mark messages as read when contact is selected
+  const markAsRead = async (contactId) => {
+    await supabase.from('messages')
+      .update({ read: true })
+      .eq('receiver_id', myId)
+      .eq('sender_id', contactId)
+      .eq('read', false);
+      
+    setMessages(prev => prev.map(m => 
+      m.sender_id === contactId && m.receiver_id === myId ? { ...m, read: true } : m
+    ));
+    
+    setContacts(prev => prev.map(c => 
+      c.id === contactId ? { ...c, unreadCount: 0 } : c
+    ));
+  };
+
+  useEffect(() => {
+    if (selectedContact) {
+      inputRef.current?.focus();
+      markAsRead(selectedContact);
+    }
   }, [selectedContact]);
 
-  // ── Build contact list ──
-  // For consumers: show farmers they bought from + all searchable farmers
-  // For farmers: show consumers who messaged them
-  const boughtFarmerIds = new Set();
-  cart.forEach(item => {
-    const fid = item.farmerId || item.farmer_id;
-    if (fid) boughtFarmerIds.add(fid);
-  });
-
-  // All farmers as potential contacts
-  const allFarmerContacts = farmers.map(f => ({
-    id: `farmer_${f.id}`,
-    farmerId: f.id,
-    name: f.name,
-    nameHi: f.nameHi,
-    avatar: farmerAvatars[f.id],
-    location: f.location,
-    locationHi: f.locationHi,
-    specialty: f.specialty,
-    rating: f.rating,
-    verified: f.verified,
-    isBought: boughtFarmerIds.has(f.id),
-    online: f.id <= 3, // simulate some online
-  }));
-
-  // For farmers, show simulated consumers
-  const consumerContacts = [
-    { id: 'consumer_1', name: 'Priya Sharma', emoji: '👩', lastOrder: '#ORD-2841', online: true },
-    { id: 'consumer_2', name: 'Amit Verma', emoji: '👨', lastOrder: '#ORD-2840', online: false },
-    { id: 'consumer_3', name: 'Neha Gupta', emoji: '👩', lastOrder: '#ORD-2839', online: true },
-    { id: 'consumer_4', name: 'Rajesh Kumar', emoji: '👨', lastOrder: '#ORD-2838', online: false },
-  ];
-
-  const contacts = isFarmer ? consumerContacts : allFarmerContacts;
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, selectedContact]);
 
   // Filter contacts by search
-  const filteredContacts = contacts.filter(c => {
+  const filteredContacts = useMemo(() => {
     const term = searchTerm.toLowerCase();
-    if (!term) return true;
-    const name = (c.name || '').toLowerCase();
-    const nameHi = (c.nameHi || '').toLowerCase();
-    const id = (c.id || '').toLowerCase();
-    const specialty = (c.specialty || '').toLowerCase();
-    const location = (c.location || '').toLowerCase();
-    return name.includes(term) || nameHi.includes(term) || id.includes(term) || specialty.includes(term) || location.includes(term);
-  });
-
-  // Separate bought farmers (priority) from others
-  const boughtContacts = filteredContacts.filter(c => c.isBought);
-  const otherContacts = filteredContacts.filter(c => !c.isBought);
-
-  // Chat key
-  const getChatKey = (contactId) => contactId;
-  const getMessages = (contactId) => allChats[getChatKey(contactId)] || [];
-  const getLastMessage = (contactId) => {
-    const msgs = getMessages(contactId);
-    return msgs.length > 0 ? msgs[msgs.length - 1] : null;
-  };
-  const getUnread = (contactId) => getMessages(contactId).filter(m => !m.read && m.from !== 'me').length;
+    let sorted = [...contacts].sort((a, b) => {
+      const timeA = a.lastMessage ? new Date(a.lastMessage.created_at).getTime() : 0;
+      const timeB = b.lastMessage ? new Date(b.lastMessage.created_at).getTime() : 0;
+      return timeB - timeA;
+    });
+    
+    if (!term) return sorted;
+    return sorted.filter(c => (c.name || '').toLowerCase().includes(term));
+  }, [contacts, searchTerm]);
 
   const activeContact = contacts.find(c => c.id === selectedContact);
 
-  // Send message
-  const handleSend = () => {
-    if (!message.trim() || !selectedContact) return;
-    const key = getChatKey(selectedContact);
-    const newMsg = {
-      id: Date.now(),
-      text: message.trim(),
-      from: 'me',
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      date: new Date().toLocaleDateString(),
-      read: true,
-    };
-    const updated = { ...allChats, [key]: [...(allChats[key] || []), newMsg] };
-    setAllChats(updated);
-    saveAllChats(updated);
-    setMessage('');
+  const activeMessages = useMemo(() => {
+    if (!selectedContact) return [];
+    return messages.filter(m => 
+      (m.sender_id === myId && m.receiver_id === selectedContact) ||
+      (m.sender_id === selectedContact && m.receiver_id === myId)
+    );
+  }, [messages, selectedContact, myId]);
 
-    // Simulate typing + reply
-    setTyping(true);
-    const delay = 1000 + Math.random() * 2000;
-    setTimeout(() => {
-      setTyping(false);
-      const replies = lang === 'en'
-        ? [
-          'Yes, all our produce is 100% organic! 🌿',
-          'It was harvested fresh this morning! 🌅',
-          'Sure, I can arrange a bulk order for you. How much do you need?',
-          'Thank you for your order! It will be packed within an hour. 📦',
-          'The delivery should reach you by evening today.',
-          'We also have fresh spinach and carrots available this week!',
-          'Feel free to ask anything about our farming practices 😊',
-          'I\'ll check the stock and get back to you shortly.',
-        ]
-        : [
-          'हां, हमारी सारी उपज 100% जैविक है! 🌿',
-          'आज सुबह ही ताज़ा काटा गया है! 🌅',
-          'ज़रूर, मैं आपके लिए थोक ऑर्डर की व्यवस्था कर सकता/सकती हूं। कितना चाहिए?',
-          'आपके ऑर्डर के लिए धन्यवाद! एक घंटे में पैक हो जाएगा। 📦',
-          'डिलीवरी आज शाम तक आपके पास पहुंच जाएगी।',
-          'इस हफ्ते ताज़ा पालक और गाजर भी उपलब्ध हैं!',
-          'हमारी खेती के तरीकों के बारे में कुछ भी पूछ सकते हैं 😊',
-          'मैं स्टॉक चेक करके बताता/बताती हूं।',
-        ];
-      const reply = {
-        id: Date.now(),
-        text: replies[Math.floor(Math.random() * replies.length)],
-        from: 'them',
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        date: new Date().toLocaleDateString(),
-        read: false,
-      };
-      const latest = loadAllChats();
-      latest[key] = [...(latest[key] || []), reply];
-      setAllChats(latest);
-      saveAllChats(latest);
-    }, delay);
+  // Send message
+  const handleSend = async () => {
+    if (!message.trim() || !selectedContact) return;
+    
+    const msgText = message.trim();
+    setMessage('');
+    
+    const newMsgObj = {
+      sender_id: myId,
+      receiver_id: selectedContact,
+      text: msgText,
+      read: false
+    };
+
+    // Optimistic UI update
+    const optimisticMsg = {
+      ...newMsgObj,
+      id: Date.now().toString(),
+      created_at: new Date().toISOString(),
+      sender: { id: myId, full_name: profile?.full_name }
+    };
+    
+    setMessages(prev => [...prev, optimisticMsg]);
+    setContacts(prev => {
+      const idx = prev.findIndex(c => c.id === selectedContact);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx].lastMessage = optimisticMsg;
+        return next;
+      }
+      return prev;
+    });
+
+    // Actually insert to Supabase
+    const { data, error } = await supabase.from('messages').insert(newMsgObj).select().single();
+    if (error) {
+      console.error('Error sending message:', error);
+      alert('Failed to send message. Make sure the database table is created.');
+      // Revert optimistic update
+      setMessages(prev => prev.filter(m => m.id !== optimisticMsg.id));
+      setContacts(prev => {
+        const next = [...prev];
+        const idx = next.findIndex(c => c.id === selectedContact);
+        if (idx >= 0) {
+          // Revert lastMessage if possible (simplified approach: just rely on next refresh or ignore for now)
+        }
+        return next;
+      });
+    } else {
+      // Replace optimistic message with real one
+      setMessages(prev => prev.map(m => m.id === optimisticMsg.id ? { ...data, sender: optimisticMsg.sender } : m));
+    }
   };
 
   // Group messages by date
   const groupMessagesByDate = (msgs) => {
     const groups = {};
     msgs.forEach(m => {
-      const d = m.date || 'Today';
+      const d = new Date(m.created_at).toLocaleDateString();
       if (!groups[d]) groups[d] = [];
       groups[d].push(m);
     });
@@ -185,48 +295,26 @@ export default function ChatPage() {
             <h2><MessageCircle size={22} /> {isFarmer ? (lang === 'en' ? 'Customers' : 'ग्राहक') : (lang === 'en' ? 'Messages' : 'संदेश')}</h2>
           </div>
 
-          {/* Search */}
           <div className="chat-search">
             <Search size={16} />
             <input
               type="text"
-              placeholder={lang === 'en' ? 'Search farmers by name, location...' : 'नाम, स्थान से किसान खोजें...'}
+              placeholder={lang === 'en' ? 'Search contacts...' : 'संपर्क खोजें...'}
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              id="chat-search-input"
             />
           </div>
 
-          {/* Contact List */}
           <div className="chat-contact-list">
-            {/* Bought from section */}
-            {!isFarmer && boughtContacts.length > 0 && (
-              <>
-                <div className="chat-list-label">
-                  🛒 {lang === 'en' ? 'Your Farmers' : 'आपके किसान'}
-                </div>
-                {boughtContacts.map(c => renderContactItem(c))}
-              </>
-            )}
-
-            {/* All / Other farmers */}
-            {!isFarmer && otherContacts.length > 0 && (
-              <>
-                <div className="chat-list-label">
-                  {boughtContacts.length > 0 ? (lang === 'en' ? 'All Farmers' : 'सभी किसान') : ''}
-                </div>
-                {otherContacts.map(c => renderContactItem(c))}
-              </>
-            )}
-
-            {/* Farmer view */}
-            {isFarmer && filteredContacts.map(c => renderContactItem(c))}
-
-            {filteredContacts.length === 0 && (
+            {loading ? (
+              <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-secondary)' }}>Loading...</div>
+            ) : filteredContacts.length === 0 ? (
               <div className="chat-no-results">
                 <Search size={32} />
                 <p>{lang === 'en' ? 'No contacts found' : 'कोई संपर्क नहीं मिला'}</p>
               </div>
+            ) : (
+              filteredContacts.map(c => renderContactItem(c))
             )}
           </div>
         </aside>
@@ -246,16 +334,14 @@ export default function ChatPage() {
                   ) : (
                     <span className="chat-avatar-emoji">{activeContact.emoji || '👤'}</span>
                   )}
-                  {activeContact.online && <span className="chat-avatar-online"></span>}
                 </div>
                 <div className="chat-main-info">
                   <h3>
-                    {lang === 'en' ? activeContact.name : (activeContact.nameHi || activeContact.name)}
+                    {activeContact.name}
                     {activeContact.verified && <CheckCircle size={14} className="chat-verified" />}
                   </h3>
                   <span className="chat-main-status">
-                    {typing ? (lang === 'en' ? 'typing...' : 'टाइप कर रहे हैं...') :
-                      activeContact.online ? (lang === 'en' ? 'Online' : 'ऑनलाइन') : (lang === 'en' ? 'Offline' : 'ऑफलाइन')}
+                    {lang === 'en' ? 'Active' : 'सक्रिय'}
                   </span>
                 </div>
                 <div className="chat-main-actions">
@@ -266,7 +352,7 @@ export default function ChatPage() {
 
               {/* Messages */}
               <div className="chat-messages-area">
-                {getMessages(selectedContact).length === 0 ? (
+                {activeMessages.length === 0 ? (
                   <div className="chat-welcome">
                     <div className="chat-welcome-avatar">
                       {activeContact.avatar ? (
@@ -275,43 +361,39 @@ export default function ChatPage() {
                         <span>{activeContact.emoji || '👤'}</span>
                       )}
                     </div>
-                    <h3>{lang === 'en' ? activeContact.name : (activeContact.nameHi || activeContact.name)}</h3>
-                    {activeContact.specialty && (
-                      <p className="chat-welcome-specialty">🌱 {activeContact.specialty}</p>
-                    )}
-                    {activeContact.location && (
-                      <p className="chat-welcome-location">📍 {lang === 'en' ? activeContact.location : (activeContact.locationHi || activeContact.location)}</p>
-                    )}
-                    {activeContact.rating && (
-                      <p className="chat-welcome-rating">⭐ {activeContact.rating} {lang === 'en' ? 'rating' : 'रेटिंग'}</p>
-                    )}
+                    <h3>{activeContact.name}</h3>
+                    {activeContact.specialty && <p className="chat-welcome-specialty">🌱 {activeContact.specialty}</p>}
                     <p className="chat-welcome-hint">
                       {lang === 'en' ? 'Send a message to start the conversation' : 'बातचीत शुरू करने के लिए संदेश भेजें'}
                     </p>
                     <div className="chat-quick-actions">
                       {(lang === 'en'
-                        ? ['Hi! Are your products organic?', 'What\'s freshly available today?', 'Can I place a bulk order?', 'Do you deliver to my area?']
-                        : ['नमस्ते! क्या आपके उत्पाद जैविक हैं?', 'आज क्या ताज़ा उपलब्ध है?', 'क्या मैं थोक ऑर्डर दे सकता/सकती हूं?', 'क्या आप मेरे क्षेत्र में डिलीवर करते हैं?']
+                        ? ['Hi! Are your products organic?', 'Can I place a bulk order?', 'Hello!']
+                        : ['नमस्ते! क्या आपके उत्पाद जैविक हैं?', 'क्या मैं थोक ऑर्डर दे सकता/सकती हूं?', 'नमस्ते!']
                       ).map((q, i) => (
                         <button key={i} className="chat-quick-btn" onClick={() => setMessage(q)}>{q}</button>
                       ))}
                     </div>
                   </div>
                 ) : (
-                  Object.entries(groupMessagesByDate(getMessages(selectedContact))).map(([date, msgs]) => (
+                  Object.entries(groupMessagesByDate(activeMessages)).map(([date, msgs]) => (
                     <div key={date}>
                       <div className="chat-date-divider"><span>{date}</span></div>
-                      {msgs.map(msg => (
-                        <div key={msg.id} className={`chat-msg ${msg.from === 'me' ? 'sent' : 'received'}`}>
-                          <div className="chat-msg-bubble">
-                            <p>{msg.text}</p>
-                            <span className="chat-msg-time">
-                              {msg.time}
-                              {msg.from === 'me' && <CheckCircle size={10} style={{ marginLeft: 4, opacity: .5 }} />}
-                            </span>
+                      {msgs.map(msg => {
+                        const isMe = msg.sender_id === myId;
+                        const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        return (
+                          <div key={msg.id} className={`chat-msg ${isMe ? 'sent' : 'received'}`}>
+                            <div className="chat-msg-bubble">
+                              <p>{msg.text}</p>
+                              <span className="chat-msg-time">
+                                {time}
+                                {isMe && <CheckCircle size={10} style={{ marginLeft: 4, opacity: msg.read ? 1 : 0.5 }} />}
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ))
                 )}
@@ -360,23 +442,14 @@ export default function ChatPage() {
   );
 
   function renderContactItem(c) {
-    const lastMsg = getLastMessage(c.id);
-    const unread = getUnread(c.id);
+    const lastMsg = c.lastMessage;
     const isActive = selectedContact === c.id;
 
     return (
       <button
         key={c.id}
         className={`chat-contact ${isActive ? 'active' : ''}`}
-        onClick={() => {
-          setSelectedContact(c.id);
-          // Mark messages as read
-          const key = getChatKey(c.id);
-          const msgs = (allChats[key] || []).map(m => ({ ...m, read: true }));
-          const updated = { ...allChats, [key]: msgs };
-          setAllChats(updated);
-          saveAllChats(updated);
-        }}
+        onClick={() => setSelectedContact(c.id)}
         id={`contact-${c.id}`}
       >
         <div className="chat-contact-avatar-wrap">
@@ -385,30 +458,24 @@ export default function ChatPage() {
           ) : (
             <span className="chat-contact-emoji">{c.emoji || '👤'}</span>
           )}
-          {c.online && <span className="chat-contact-dot"></span>}
         </div>
         <div className="chat-contact-body">
           <div className="chat-contact-top">
             <span className="chat-contact-name">
-              {lang === 'en' ? c.name : (c.nameHi || c.name)}
+              {c.name}
               {c.verified && <CheckCircle size={12} className="chat-verified-sm" />}
             </span>
-            {lastMsg && <span className="chat-contact-time">{lastMsg.time}</span>}
+            {lastMsg && <span className="chat-contact-time">{new Date(lastMsg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
           </div>
           <div className="chat-contact-bottom">
             <span className="chat-contact-preview">
               {lastMsg
-                ? (lastMsg.from === 'me' ? '✓ ' : '') + lastMsg.text.slice(0, 35) + (lastMsg.text.length > 35 ? '…' : '')
-                : c.specialty || c.lastOrder || (lang === 'en' ? 'Tap to message' : 'संदेश भेजें')
+                ? (lastMsg.sender_id === myId ? '✓ ' : '') + lastMsg.text.slice(0, 35) + (lastMsg.text.length > 35 ? '…' : '')
+                : c.specialty || (lang === 'en' ? 'Tap to message' : 'संदेश भेजें')
               }
             </span>
-            {unread > 0 && <span className="chat-contact-badge">{unread}</span>}
+            {c.unreadCount > 0 && <span className="chat-contact-badge">{c.unreadCount}</span>}
           </div>
-          {c.isBought && !lastMsg && (
-            <span className="chat-bought-tag">
-              🛒 {lang === 'en' ? 'Purchased' : 'खरीदा'}
-            </span>
-          )}
         </div>
       </button>
     );

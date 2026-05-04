@@ -26,13 +26,29 @@ export default function ConsumerDashboard() {
   const [loading, setLoading]           = useState(true);
 
   useEffect(() => {
-    Promise.all([
-      fetchProducts(),
-      supabase.from('quick_filters').select('*').order('id'),
-    ]).then(([prods, { data: qf }]) => {
-      setProducts(prods);
-      setFilters(qf || []);
-    }).catch(console.error).finally(() => setLoading(false));
+    const loadData = () => {
+      Promise.all([
+        fetchProducts(),
+        supabase.from('quick_filters').select('*').order('id'),
+      ]).then(([prods, { data: qf }]) => {
+        setProducts(prods);
+        setFilters(qf || []);
+      }).catch(console.error).finally(() => setLoading(false));
+    };
+
+    loadData();
+
+    // Subscribe to realtime product updates so the shop is always live
+    const channel = supabase.channel('public:products')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, (payload) => {
+        // When a product changes, just reload the products list to get fresh joins (like farmer details)
+        fetchProducts().then(setProducts).catch(console.error);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const filtered = products.filter(p => {
@@ -86,9 +102,13 @@ export default function ConsumerDashboard() {
                 const farmer = p.farmers;
                 return (
                   <Link to={`/product/${p.id}`} key={p.id} className={`product-card fade-in-up stagger-${(i % 5) + 1}`} id={`shop-product-${p.id}`}>
-                    <div className="product-card-image">
-                      <span className="emoji">{p.emoji || categoryEmoji[p.category] || '🛒'}</span>
-                      <span className="badge badge-green">{lang === 'en' ? p.badge : p.badge_hi}</span>
+                    <div className="product-card-image" style={p.image_url ? { padding: 0, overflow: 'hidden' } : {}}>
+                      {p.image_url ? (
+                        <img src={p.image_url} alt={p.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <span className="emoji">{p.emoji || categoryEmoji[p.category] || '🛒'}</span>
+                      )}
+                      <span className="badge badge-green" style={p.image_url ? { position: 'absolute', top: 12, left: 12 } : {}}>{lang === 'en' ? p.badge : p.badge_hi}</span>
                     </div>
                     <div className="product-card-body">
                       <h3>{lang === 'en' ? p.name : p.name_hi}</h3>

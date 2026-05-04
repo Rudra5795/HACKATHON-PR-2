@@ -54,8 +54,12 @@ export default function ProductPage() {
     <main className="product-page">
       <div className="container">
         <div className="product-layout">
-          <div className="product-image-box fade-in" id="product-image">
-            <span className="emoji">{product.emoji || categoryEmoji[product.category] || '🛒'}</span>
+          <div className="product-image-box fade-in" id="product-image" style={product.image_url ? { padding: 0, overflow: 'hidden', background: '#F3F4F6' } : {}}>
+            {product.image_url ? (
+              <img src={product.image_url} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            ) : (
+              <span className="emoji">{product.emoji || categoryEmoji[product.category] || '🛒'}</span>
+            )}
             <span className="badge badge-fresh" style={{ position:'absolute', top:20, left:20 }}>
               <Clock size={12} /> {t('harvestedAgo').replace('{hours}', getHoursAgo(product.freshness))}
             </span>

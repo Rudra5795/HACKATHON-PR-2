@@ -1,17 +1,21 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { MapPin, CreditCard, Truck, Plus, Minus, X, Trash2 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { supabase } from '../lib/supabase';
 
 export default function CheckoutPage() {
   const {
-    t, lang, cart, cartTotal, updateQty, removeFromCart,
+    t, lang, cart, cartTotal, updateQty, clearCart,
     selectedAddress, setSelectedAddress, paymentMethod, setPaymentMethod,
-    addresses, addAddress, removeAddress,
+    addresses, addAddress, removeAddress, session
   } = useApp();
+  const navigate = useNavigate();
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [newAddr, setNewAddr] = useState({ type: '', typeHi: '', address: '', city: '' });
+  const [isPlacing, setIsPlacing] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState('');
 
   const deliveryFee = cartTotal >= 200 ? 0 : 30;
   const discount = Math.round(cartTotal * 0.05);
@@ -39,6 +43,103 @@ export default function CheckoutPage() {
       return;
     }
     removeAddress(id);
+  };
+
+  const handlePlaceOrder = async () => {
+    if (!session) {
+      alert(lang === 'en' ? 'Please log in to place an order.' : 'कृपया ऑर्डर करने के लिए लॉगिन करें।');
+      navigate('/auth');
+      return;
+    }
+    if (!selectedAddress) {
+      alert(lang === 'en' ? 'Please select a delivery address.' : 'कृपया डिलीवरी का पता चुनें।');
+      return;
+    }
+    if (!phoneNumber || phoneNumber.length < 10) {
+      alert(lang === 'en' ? 'Please enter a valid phone number.' : 'कृपया एक मान्य फ़ोन नंबर दर्ज करें।');
+      return;
+    }
+
+    setIsPlacing(true);
+
+    try {
+      // Group items by farmer_id
+      const itemsByFarmer = {};
+      cart.forEach(item => {
+        const fid = item.farmer_id || item.farmerId || (item.farmers && item.farmers.id) || null;
+        if (!fid) {
+          console.warn('Item has no farmer_id:', item);
+          // Fallback to farmer 1 if somehow missing, to prevent crash
+        }
+        const useFid = fid || 1;
+        if (!itemsByFarmer[useFid]) itemsByFarmer[useFid] = [];
+        itemsByFarmer[useFid].push(item);
+      });
+
+      const myId = session.user.id;
+      const selectedAddrObj = addresses.find(a => a.id === selectedAddress);
+      const shippingAddressStr = selectedAddrObj 
+        ? `${selectedAddrObj.address}, ${selectedAddrObj.city}`
+        : 'Unknown Address';
+
+      // Create an order for each farmer
+      for (const [farmerId, items] of Object.entries(itemsByFarmer)) {
+        const subtotal = items.reduce((sum, item) => sum + (item.price * item.qty), 0);
+        // Distribute delivery fee and discount proportionally or simply apply to the first order.
+        // For simplicity, we just charge the exact subtotal for each farmer to avoid rounding issues,
+        // and add delivery fee if subtotal < 200 for this specific farmer.
+        const fDeliveryFee = subtotal >= 200 ? 0 : 30;
+        const fDiscount = Math.round(subtotal * 0.05);
+        const fTotal = subtotal + fDeliveryFee - fDiscount;
+
+        const orderObj = {
+          consumer_id: myId,
+          farmer_id: parseInt(farmerId),
+          payment_method: paymentMethod,
+          subtotal: subtotal,
+          delivery_fee: fDeliveryFee,
+          total: fTotal,
+          status: 'placed',
+          phone_number: phoneNumber,
+          shipping_address: shippingAddressStr
+        };
+
+        // Insert order
+        const { data: orderData, error: orderErr } = await supabase
+          .from('orders')
+          .insert(orderObj)
+          .select('id')
+          .single();
+
+        if (orderErr) throw orderErr;
+
+        // Insert order items
+        const orderItemsObj = items.map(item => ({
+          order_id: orderData.id,
+          product_id: item.id,
+          name: lang === 'en' ? item.name : (item.name_hi || item.name),
+          price: item.price,
+          qty: item.qty,
+          unit: item.unit,
+          emoji: item.emoji || '🛒'
+        }));
+
+        const { error: itemsErr } = await supabase
+          .from('order_items')
+          .insert(orderItemsObj);
+
+        if (itemsErr) throw itemsErr;
+      }
+
+      // Success!
+      clearCart();
+      navigate('/tracking');
+    } catch (err) {
+      console.error('Checkout error:', err);
+      alert('Failed to place order. Please try again.');
+    } finally {
+      setIsPlacing(false);
+    }
   };
 
   if (cart.length === 0) {
@@ -150,6 +251,21 @@ export default function CheckoutPage() {
               )}
             </div>
 
+            {/* ── Contact Details ── */}
+            <div className="checkout-section fade-in-up stagger-1" style={{ marginTop: 24 }}>
+              <h2><Truck size={20} /> {lang === 'en' ? 'Contact Details' : 'संपर्क विवरण'}</h2>
+              <div className="form-group" style={{ maxWidth: 400 }}>
+                <label>{lang === 'en' ? 'Phone Number' : 'फ़ोन नंबर'}</label>
+                <input
+                  type="tel"
+                  placeholder={lang === 'en' ? 'Enter 10-digit mobile number' : '10 अंकों का मोबाइल नंबर दर्ज करें'}
+                  value={phoneNumber}
+                  onChange={e => setPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  required
+                />
+              </div>
+            </div>
+
             {/* ── Payment Method ── */}
             <div className="checkout-section fade-in-up stagger-2">
               <h2><CreditCard size={20} /> {t('paymentMethod')}</h2>
@@ -196,9 +312,19 @@ export default function CheckoutPage() {
               <div className="summary-row"><span>{t('discount')} (5%)</span><span className="green">-₹{discount}</span></div>
               <div className="summary-row total"><span>{t('total')}</span><span>₹{total}</span></div>
             </div>
-            <Link to="/tracking" className="btn btn-primary btn-lg" style={{ width: '100%', justifyContent: 'center', marginTop: 20 }} id="place-order-btn">
-              <Truck size={20} /> {t('placeOrder')}
-            </Link>
+            <button 
+              className="btn btn-primary btn-lg" 
+              style={{ width: '100%', justifyContent: 'center', marginTop: 20 }} 
+              id="place-order-btn"
+              onClick={handlePlaceOrder}
+              disabled={isPlacing}
+            >
+              {isPlacing ? (
+                <><span className="spinner" style={{width: 18, height: 18, marginRight: 8, borderWidth: 2}}></span> {lang === 'en' ? 'Placing...' : 'हो रहा है...'}</>
+              ) : (
+                <><Truck size={20} /> {t('placeOrder')}</>
+              )}
+            </button>
           </div>
         </div>
       </div>
