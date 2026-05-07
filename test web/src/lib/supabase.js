@@ -32,9 +32,10 @@ export const fetchProducts = async () => {
     .from('products')
     .select(`
       *,
-      farmers ( name, name_hi, location, verified, rating )
+      farmers!inner ( name, name_hi, location, verified, rating, user_id )
     `)
     .eq('is_active', true)
+    .not('farmers.user_id', 'is', null)
     .order('id');
   if (error) throw error;
   return data;
@@ -44,9 +45,10 @@ export const fetchProducts = async () => {
 export const fetchProductsByCategory = async (category) => {
   const { data, error } = await supabase
     .from('products')
-    .select('*, farmers(name, name_hi, verified)')
+    .select('*, farmers!inner(name, name_hi, verified, user_id)')
     .eq('category', category)
-    .eq('is_active', true);
+    .eq('is_active', true)
+    .not('farmers.user_id', 'is', null);
   if (error) throw error;
   return data;
 };
@@ -55,9 +57,10 @@ export const fetchProductsByCategory = async (category) => {
 export const searchProducts = async (query) => {
   const { data, error } = await supabase
     .from('products')
-    .select('*, farmers(name, name_hi)')
+    .select('*, farmers!inner(name, name_hi, user_id)')
     .ilike('name', `%${query}%`)
-    .eq('is_active', true);
+    .eq('is_active', true)
+    .not('farmers.user_id', 'is', null);
   if (error) throw error;
   return data;
 };

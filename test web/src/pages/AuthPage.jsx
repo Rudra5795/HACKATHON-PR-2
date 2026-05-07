@@ -9,23 +9,23 @@ export default function AuthPage() {
   const { signIn, signUp, signInWithPhone, signUpWithPhone, lang } = useApp();
   const navigate = useNavigate();
 
-  const [mode, setMode]         = useState('login');   // 'login' | 'signup'
-  const [role, setRole]         = useState('consumer'); // 'consumer' | 'farmer'
+  const [mode, setMode] = useState('login');   // 'login' | 'signup'
+  const [role, setRole] = useState('consumer'); // 'consumer' | 'farmer'
 
   // Consumer fields
   const [fullName, setFullName] = useState('');
-  const [email, setEmail]       = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPw, setShowPw]     = useState(false);
+  const [showPw, setShowPw] = useState(false);
 
   // Farmer phone fields
-  const [phone, setPhone]       = useState('');
-  const [otp, setOtp]           = useState('');
-  const [otpSent, setOtpSent]   = useState(false);
+  const [phone, setPhone] = useState('');
+  const [otp, setOtp] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
 
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState('');
-  const [success, setSuccess]   = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   const resetFields = () => {
     setFullName(''); setEmail(''); setPassword('');
@@ -155,7 +155,7 @@ export default function AuthPage() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
             {[
               { val: 'consumer', icon: <ShoppingBag size={22} />, label: lang === 'en' ? 'Consumer' : 'ग्राहक', sub: lang === 'en' ? 'Buy fresh produce' : 'ताज़ी उपज खरीदें' },
-              { val: 'farmer',   icon: <Sprout size={22} />,      label: lang === 'en' ? 'Farmer'   : 'किसान',  sub: lang === 'en' ? 'Sell your produce' : 'अपनी उपज बेचें' },
+              { val: 'farmer', icon: <Sprout size={22} />, label: lang === 'en' ? 'Farmer' : 'किसान', sub: lang === 'en' ? 'Sell your produce' : 'अपनी उपज बेचें' },
             ].map(r => (
               <button key={r.val} onClick={() => { setRole(r.val); resetFields(); }} id={`role-${r.val}`}
                 style={{
